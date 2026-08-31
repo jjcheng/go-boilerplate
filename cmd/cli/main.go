@@ -1,0 +1,74 @@
+package main
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
+	"github.com/jjcheng/go-boilerplate/internal/cfg"
+	feature_cli "github.com/jjcheng/go-boilerplate/internal/feature/cli"
+)
+
+func main() {
+	// set timezone to utc so no need to call .UTC() everytime
+	time.Local = time.UTC
+	// set log to stdout as error will be handled by loggerService
+	log.SetOutput(os.Stdout)
+	log.Println("starting cli")
+	log.Printf("environment: %s\n", cfg.Default().Site.Environment)
+	fmt.Println()
+	// Setup graceful shutdown for interruption signals
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
+	// Channel to signal when tasks are done
+	done := make(chan bool, 1)
+	ctx := context.Background()
+	// Run tasks in a goroutine
+	go func() {
+		defer func() {
+			done <- true
+		}()
+		// works
+		if len(os.Args[1:]) == 0 {
+			showHelp()
+			return
+		}
+		log.Println(os.Args[1])
+		switch os.Args[1] {
+		case "migration-files":
+			feature_cli.GenerateMigrationFiles(ctx)
+		case "restore-db":
+			feature_cli.RestoreLocalDBFromMigrationFiles()
+		default:
+			showHelp()
+		}
+	}()
+	// Wait for either task completion or interruption signal
+	select {
+	case <-done:
+		fmt.Println()
+	case <-quit:
+		fmt.Println()
+		log.Println("received interruption signal")
+	}
+	log.Println("server exiting")
+}
+
+func showHelp() {
+	fmt.Println("Select one from the options:")
+	fmt.Println("1. Generate migration files")
+	fmt.Println("2. Restore local DB")
+	var option string
+	_, _ = fmt.Scan(&option)
+	ctx := context.Background()
+	switch option {
+	case "1":
+		feature_cli.GenerateMigrationFiles(ctx)
+	case "2":
+		feature_cli.RestoreLocalDBFromMigrationFiles()
+	}
+}
